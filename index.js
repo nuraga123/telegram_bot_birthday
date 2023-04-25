@@ -1,143 +1,147 @@
 const TelegramApi = require("node-telegram-bot-api");
-
+const fs = require("fs");
 const token = "5693024074:AAE8oyt9iprrSjqX44abVO78uO82tGjBdVM";
-
 const bot = new TelegramApi(token, { polling: true });
 
-const chat = {};
+const rawData = fs.readFileSync("users.json");
+const users = JSON.parse(rawData);
+const stiker =
+  "https://stickerswiki.ams3.cdn.digitaloceanspaces.com/PrettyMind_Birthday/765034.512.webp";
+// validate date
+function isValidDate(inputDate) {
+  return (
+    /^\d{2}\.\d{2}\.\d{4}$/.test(inputDate) &&
+    !isNaN(Date.parse(inputDate.replace(/\./g, "-")))
+  );
+}
+
+function isToday(dateStr) {
+  const now = new Date();
+  const [day, month] = dateStr.split(".");
+  const dateToCheck = new Date(
+    now.getFullYear(),
+    parseInt(month) - 1,
+    parseInt(day)
+  );
+
+  if (
+    dateToCheck.getDate() === now.getDate() &&
+    dateToCheck.getMonth() === now.getMonth()
+  ) {
+    console.log(`Дата ${dateStr} сегодня!`);
+    return true;
+  } else {
+    return false;
+  }
+}
+
+function getBirthdayOfnextWeek(people, id) {
+  const today = new Date();
+  // day + 7 = nextWeek
+  const nextWeek = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate() + 7
+  );
+
+  for (let person of people) {
+    // ["25", "04", "2023"]
+    const parts = person.date.split(".");
+    //                          year       month      day
+    const birthday = new Date(parts[2], parts[1] - 1, parts[0]);
+
+    if (
+      birthday.getDate() === nextWeek.getDate() &&
+      birthday.getMonth() === nextWeek.getMonth()
+    ) {
+      bot.sendMessage(
+        id,
+        `У ${person.fullname} через 7 дней будет день рождения!`
+      );
+    }
+  }
+}
 
 const start = () => {
   bot.setMyCommands([
     { command: "/start", description: "старт" },
-    { command: "/info", description: "информация о тебе" },
+    {
+      command: "/info",
+      description: "информация о всех у кого день рождение ?",
+    },
     { command: "/birthday", description: "день рождения" },
+    { command: "/today__birthday", description: "сегодня чьи рождения есть ?" },
   ]);
 
   bot.on("message", async (msg) => {
     const text = msg.text;
     const chatId = msg.chat.id;
-    const fullname = `${msg.from.first_name} ${msg.from.last_name}`;
+    const userId = msg.from.id;
+
+    const username = msg.from.username === undefined ? "" : msg.from.username;
+
+    const firstname =
+      msg.from.first_name === undefined ? "" : msg.from.first_name;
+
+    const lastname = msg.from.last_name === undefined ? "" : msg.from.last_name;
+
+    const fullname =
+      firstname && lastname
+        ? `${firstname} ${lastname}`
+        : firstname
+        ? `${firstname}`
+        : username
+        ? `${username}`
+        : `${userId}`;
+
     console.log(msg);
-
-    // logic
-    // Разбиваем полученную дату на день, месяц и год
-    const [day, month, year] = msg.text.split(".");
-
-    // Создаем объект даты рождения
-    const birthday = new Date(`${month}/${day}/${year}`);
-
-    // Получаем текущую дату
-    const today = new Date();
-
-    // Вычисляем дату ближайшего дня рождения
-    const nextBirthday = new Date(
-      today.getFullYear(),
-      birthday.getMonth(),
-      birthday.getDate()
-    );
-
-    // Если день рождения уже прошел в этом году, то считаем дату следующего года
-    if (nextBirthday < today) {
-      nextBirthday.setFullYear(nextBirthday.getFullYear() + 1);
+    if (text === "/start") {
+      bot.sendMessage(
+        chatId,
+        `привет ${fullname} напиши свою дату рождения 04.04.1995?`
+      );
     }
 
-    // Вычисляем разницу между текущей датой и датой ближайшего дня рождения в днях
-    const diffDays = Math.ceil((nextBirthday - today) / (1000 * 60 * 60 * 24));
+    if (isValidDate(text)) {
+      const userExists = users.some((user) => {
+        return user.fullname === fullname && user.date === text;
+      });
 
-    // Если до дня рождения менее 14 дней, отправляем сообщение
-    if (diffDays <= 14) {
-      bot.getChatMembersCount(chatId).then((count) => {
-        for (let i = 0; i < count; i += 1) {
-          bot.getChatMember(chatId, i).then((member) => {
-            if (member.user.id !== bot.options.polling.id) {
-              bot.sendMessage(
-                member.user.id,
-                `Через ${diffDays} дней у ${msg.from.first_name} (${msg.text}) день рождения! Не забудьте поздравить его!`
-              );
-            }
-          });
+      if (!userExists) {
+        console.log(text.length);
+        users.push({
+          fullname: fullname,
+          date: text,
+        });
+
+        const updatedData = JSON.stringify(users);
+        fs.writeFileSync("users.json", updatedData);
+
+        await bot.sendMessage(chatId, "сохраненно");
+        console.log(users);
+      } else {
+        await bot.sendMessage(chatId, "Вы уже сохранились");
+      }
+    }
+
+    if (text === "/info") {
+      users.map((user, index) =>
+        bot.sendMessage(chatId, `${index + 1}) ${user.fullname} ${user.date}`)
+      );
+    }
+
+    if (text === "/today__birthday") {
+      await users.filter((user) => {
+        if (user.fullname !== fullname) {
+          if (isToday(user.date)) {
+            bot.sendMessage(chatId, `Дата ${user.fullname} сегодня!`);
+          } else bot.sendMessage(chatId, "сегодня ни у кого нет дня рождения");
         }
       });
     }
 
-    if (text === "/start") {
-      await bot.sendSticker(
-        chatId,
-        "https://stickerswiki.ams3.cdn.digitaloceanspaces.com/PrettyMind_Birthday/765034.512.webp"
-      );
-      return bot.sendMessage(
-        chatId,
-        `привет я бот который не дасть забыть тебе и твоим друзьям день рождение`
-      );
-    }
-
-    if (text === "/info") {
-      return bot.sendMessage(chatId, `тебя зовут ${fullname}`);
-    }
-
-    if (text === "/birthday") {
-      const randomNumber = 10;
-      chat[chatId] = randomNumber;
-      return bot.sendMessage();
-    }
-
-    return bot.sendMessage(chatId, "Я тебя не понял");
+    if (users.length) return getBirthdayOfnextWeek(users, chatId);
   });
 };
-
-// Обработчик команды /start
-bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(
-    msg.chat.id,
-    `Привет! Я бот, 
-    который поможет тебе не забыть о днях рождения твоих друзей и близких. 
-    Просто отправь мне свою дату рождения в формате ДД.ММ.ГГГГ.`
-  );
-});
-
-// Обработчик сообщений с датой рождения
-bot.on("message", (msg) => {
-  const chatId = msg.chat.id;
-
-  // Разбиваем полученную дату на день, месяц и год
-  const [day, month, year] = msg.text.split(".");
-
-  // Создаем объект даты рождения
-  const birthday = new Date(`${month}/${day}/${year}`);
-
-  // Получаем текущую дату
-  const today = new Date();
-
-  // Вычисляем дату ближайшего дня рождения
-  const nextBirthday = new Date(
-    today.getFullYear(),
-    birthday.getMonth(),
-    birthday.getDate()
-  );
-
-  // Если день рождения уже прошел в этом году, то считаем дату следующего года
-  if (nextBirthday < today) {
-    nextBirthday.setFullYear(nextBirthday.getFullYear() + 1);
-  }
-
-  // Вычисляем разницу между текущей датой и датой ближайшего дня рождения в днях
-  const diffDays = Math.ceil((nextBirthday - today) / (1000 * 60 * 60 * 24));
-
-  // Если до дня рождения менее 14 дней, отправляем сообщение
-  if (diffDays <= 14) {
-    bot.getChatMembersCount(chatId).then((count) => {
-      for (let i = 0; i < count; i += 1) {
-        bot.getChatMember(chatId, i).then((member) => {
-          if (member.user.id !== bot.options.polling.id) {
-            bot.sendMessage(
-              member.user.id,
-              `Через ${diffDays} дней у ${msg.from.first_name} (${msg.text}) день рождения! Не забудьте поздравить его!`
-            );
-          }
-        });
-      }
-    });
-  }
-});
 
 start();
