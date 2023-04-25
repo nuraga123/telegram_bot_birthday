@@ -74,6 +74,8 @@ const start = () => {
   ]);
 
   bot.on("message", async (msg) => {
+    console.log(msg);
+
     const text = msg.text;
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -110,6 +112,7 @@ const start = () => {
       if (!userExists) {
         console.log(text.length);
         users.push({
+          id: chatId,
           fullname: fullname,
           date: text,
         });
@@ -140,8 +143,19 @@ const start = () => {
       });
     }
 
-    if (users.length) return getBirthdayOfnextWeek(users, chatId);
+    const limitFC = 10000;
+    if (users.length) {
+      return setInterval(() => getBirthdayOfnextWeek(users, chatId), limitFC);
+    }
   });
 };
 
 start();
+// 24 hours
+const limitTime = 86400000;
+setInterval(() => {
+  users.length &&
+    users.filter((user) => {
+      getBirthdayOfnextWeek(users, user?.id);
+    });
+}, limitTime);
